@@ -47,7 +47,7 @@ parser.add_argument('--trained_model', default='weights/craft_mlt_25k.pth', type
 parser.add_argument('--text_threshold', default=0.7, type=float, help='text confidence threshold')
 parser.add_argument('--low_text', default=0.4, type=float, help='text low-bound score')
 parser.add_argument('--link_threshold', default=0.4, type=float, help='link confidence threshold')
-parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda for inference')
+parser.add_argument('--cuda', default=False, type=str2bool, help='Use cuda for inference')
 parser.add_argument('--canvas_size', default=1280, type=int, help='image size for inference')
 parser.add_argument('--mag_ratio', default=1.5, type=float, help='image magnification ratio')
 parser.add_argument('--poly', default=False, action='store_true', help='enable polygon type')
@@ -117,7 +117,42 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly, r
 
     return boxes, polys, ret_score_text
 
+def overlap(r1_left_top, r1_right_bottom, r2_left_top, r2_right_bottom):
+    if(r1_left_top[1] > r2_right_bottom[1] 
+    and r2_left_top[1] > r1_right_bottom[1] 
+    and r1_left_top[0] < r2_right_bottom[0]
+    and r1_right_bottom[0] > r2_left_top[0]):
+        return True
+    else:
+        return False
 
+def sort_boxes(boxes):
+    overlap_flag = {}
+    delete_list = []
+    for i in range(boxes.shape[0]):
+        for j in range(i,boxes.shape[0]):
+            if(overlap(boxes[i][0],boxes[i][2],boxes[j][0],boxes[j][2])): #判断是否有交叉
+                if(overlap_flag.get(i) == None):
+                    overlap_flag[i] = [j]
+                else:
+                    overlap_flag[i].append(j)
+        if(overlap_flag.get(i) == None):
+            overlap_flag[i] = []
+    for i in overlap_flag.keys():
+        box = [boxes[i]]
+        for k in overlap_flag[i]:
+            box.append(boxes[k])
+            delete_list.append(k)
+        for p in range(4): 
+            max_left, max_right = box[0][p][0], box[0][p][1]
+            for j in range(len(box)):
+                if(max_left < box[j][p][0]):
+                    max_left = box[0][p][0]
+                if(max_right < box[j][p][1]):
+                    max_right = box[j][p][1]
+            boxes[i][p][0] = max_left
+            boxes[i][p][1] = max_right
+    boxes = np.delete(boxes, delete_list)
 
 if __name__ == '__main__':
     # load net
@@ -165,6 +200,8 @@ if __name__ == '__main__':
         filename, file_ext = os.path.splitext(os.path.basename(image_path))
         mask_file = result_folder + "/res_" + filename + '_mask.jpg'
         cv2.imwrite(mask_file, score_text)
+
+        #sort_boxes(polys)
 
         file_utils.saveResult(image_path, image[:,:,::-1], polys, dirname=result_folder)
 
